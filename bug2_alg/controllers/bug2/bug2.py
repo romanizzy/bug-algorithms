@@ -2,18 +2,18 @@
 # use <robot_position> to get current position of robot in <x,y,theta> format.
 # use <robot_omega> to get current values for the wheels in <w1,w2,w3> format.
 
-
 import numpy as np
-from initialization import * 
+from initialization import *
 import math
 
+# boolean function: Checks ifrobot is on m_line
 def is_on_M_line(x, y, threshold=0.1):
     goal_point_X = 0.25
-    #print(x - goal_point_X)
-    #print(abs(x - goal_point_X))
-    print("On M_Line: ", abs(x - goal_point_X) < threshold)
-    return abs(x - goal_point_X) < threshold
-     
+    # print(abs(x - goal_point_X))
+    # print("On M_Line: ", abs(x - goal_point_X) < threshold)
+    return abs(x-goal_point_X) < threshold
+
+# boolean function: rotates robot if not pointed to M
 def align_to_M(heading, theta, threshold, turn_left=False):
     ts = 1  # turning speed
     print("Values: ", heading, theta, turn_left)
@@ -27,229 +27,123 @@ def align_to_M(heading, theta, threshold, turn_left=False):
         
         update_motor_speed(input_omega=[ts/20, -1*ts])
         return False
-        
+
+# returns distance between two given points
 def calculate_euclidean_distance(x1, y1, x2, y2):
     print("Euclidean Distance: ", math.sqrt((x1-x2)**2 + (y1-y2)**2))
     return math.sqrt((x1-x2)**2 + (y1-y2)**2)
-        
-    
+
 if __name__ == "__main__":
-    
+    # initialization of robot
     TIME_STEP = 32
     robot = init_robot(time_step=TIME_STEP)
     print("Robot Initialized")
-    init_robot_state(in_pos=[0,0,0],in_omega=[0,0]) 
+    init_robot_state(in_pos=[0,0,0], in_omega=[0,0])
     prev = ""
-
-    goal_position = 0.25, -1.5
     
-    # DEFINE STATES HERE!
+    # try getting position of another object or goal object instead of hardcode
+    goal_position = 0.25, -1.5
+
+    # define local variables
     state = 'start'
-    robot_speed = 5
-    forward_left_speeds = [1*robot_speed, 1*robot_speed]
+    robot_speed = 3
+    forward_left_speeds = [robot_speed, robot_speed]
     far_from_wall_counter = 0
     close_to_wall_counter = 0
-    hit_point = []  # x, y
-    leave_point = []  # x, y
+    hit_point = []      # x, y
+    leave_point = []    # x, y
+
+    # robot loop
     while robot.step(TIME_STEP) != -1:
 
-        gps_values,compass_val,sonar_value,encoder_value,ir_value = read_sensors_values()
-        #print("Sensor Read Complete")
+        # trash variable for unused sonar. can be taken out of initialization.py
+        gps_values, compass_val, trash, encoder_value, ir_value = read_sensors_values()
+        # print("Sensor Read Complete")
         front_ir_values = ir_value[0], ir_value[7]
         right_ir_values = ir_value[1], ir_value[2]
         left_ir_values = ir_value[5], ir_value[6]
-        left_sonar = sonar_value[2]
-        right_sonar = sonar_value[0]
-        front_sonar = sonar_value[1]
-        
-        update_robot_state()       
-        # DEFINE STATE MACHINE HERE!
-        print("Current: ",state)
-        #print("Previous: ", prev)
-        
+
+
+        update_robot_state()
+        # print("Current: ", state)
+        # print("Previous: ", prev)
+
+        # checks if on M-line before start. might need to be updated to
+        # calculate and save m-line points instead.
+        # function also works when if statement is taken out.
         if state == 'start':
-            #print("Running start state")
-            #if(is_on_M_line(gps_values[0], gps_values[1])):
-            prev = state
-            state = 'align_robot_heading'
-                #print("State Changed to align_robot_heading")
-                
+            # print("Running start state")
+            if(is_on_M_line(gps_values[0],gps_values[1])):
+                prev = state 
+                state = 'align_robot_heading'
+
+        # checks to see if robot is aligned. if align, start moving
         elif state == 'align_robot_heading':
-            #print("Running align_robot_heading state")
-            is_aligned = align_to_M(get_bearing_in_degrees(compass_val), theta=180, threshold=0.1)
-            if is_aligned:
+            # print("Running align robot heading state")
+            is_aligned = align_to_M(get_bearing_in_degrees(compass_val), theta=180, threshold=0.1) 
+            if is_aligned: 
                 prev = state
                 state = 'move_to_goal'
-                #print("State changed to move_to_goal")
-                
+
+        # updates robot position, moving along the m-line
+        # if at goal, stop; if front finds obstacle, wall follow + save hit points
+        # maybe calculate slope for m-line and match for alignment and movement?
         elif state == 'move_to_goal':
-            #print("Running move_to_goal state")
+            # print("Running move to goal state")
             update_motor_speed(input_omega=[robot_speed, robot_speed])
             difference = abs(front_ir_values[1] - front_ir_values[0])
-            #print("Difference: ", difference)
-            #print("Front_ir_values: ", front_ir_values[0], " ", front_ir_values[1])
-            if(calculate_euclidean_distance(gps_values[0], gps_values[1], goal_position[0], goal_position[1])< 0.1):
+            # print("Difference: ", difference)
+            # print("Front_ir_values: ", front_ir_values[0], " ", front_ir_values[1])
+            if ((gps_values[0], gps_values[1], goal_position[0], goal_position[1])<0.5):
                 state = 'end'
-                #print("State changed to end")
             elif (front_ir_values[0] + front_ir_values[1]) / 2 > 800:
                 prev = state
                 state = 'wall_following'
-                #print("State changed to wall_following")
                 hit_point.append([gps_values[0], gps_values[1]])
-                
+                    
             
-                
-                
-        
+        # follows perimeter of obstacle.
         elif state == 'wall_following':
-            # check if it must turn
-            #print("Running wall_following state")
-            #the below is new code
+            # print("Running wall_following state")
             left_wall = left_ir_values[0] > 80
             front_wall = ((front_ir_values[0] + front_ir_values[1]) / 2) > 80
             right_wall = right_ir_values[1] > 80
-            #print("Left Values: ", left_ir_values)
-            #print("Front Values: ", front_ir_values)
-            #print("Right Values: ", right_ir_values)
-            #print("Left Wall: ", left_wall)
-            #print("Front Wall: ", front_wall)
-            #print("Right Wall: ", right_wall)
-            if front_wall: #found wall in front, default turn left
-                #print("Running front wall")
+            # print("Left Values: ", left_ir_values)
+            # print("Front Values: ", front_ir_values)
+            # print("Right Values: ", right_ir_values)
+            # print("Left Wall: ", left_wall)
+            # print("Front Wall: ", front_wall)
+            # print("Right Wall: ", right_wall)
+
+            # found wall in front, default turn to left
+            if front_wall: 
+                # print("Running front wall")
                 update_motor_speed(input_omega=[-1*robot_speed, robot_speed])
-                #prev = state
-                #state = 'turn'
-                #theta_0 = get_bearing_in_degrees(compass_val)
+
+            # is on m-line after wall following, creates leave point and aligns to goal again
             elif (is_on_M_line(gps_values[0], gps_values[1])) and prev == 'wall_following':
-                leave_point.append([gps_values[0], gps_values[1]])
-                 
-                #print("Running M_line")
-                #print(calculate_euclidean_distance(gps_values[0], gps_values[1], goal_postition[0], goal_postition[1]) < calculate_euclidean_distance(hit_point[-1][0], hit_point[-1][1], goal_postition[0], goal_postition[1]))
-                if calculate_euclidean_distance(gps_values[0], gps_values[1], goal_position[0], goal_position[1]) < calculate_euclidean_distance(hit_point[-1][0], hit_point[-1][1], goal_postition[0], goal_postition[1]):
+                # print("Running M_line")
+                # print(calculate_euclidean_distance(gps_values[0], gps_values[1], goal_postition[0], goal_postition[1]) < calculate_euclidean_distance(hit_point[-1][0], hit_point[-1][1], goal_postition[0], goal_postition[1]))
+                if calculate_euclidean_distance(gps_values[0], gps_values[1], goal_position[0], goal_position[1]) < calculate_euclidean_distance(hit_point[-1][0], hit_point[-1][1], goal_position[0], goal_position[1]):
                     #print("Running E-Distance")
+                    leave_point.append([gps_values[0], gps_values[1]])
                     prev = state
                     state = 'align_robot_heading'
-            elif right_wall: #following wall on the right
+
+            # following wall on the right
+            elif right_wall: 
                 update_motor_speed(input_omega=[robot_speed, robot_speed])
                 if calculate_euclidean_distance(gps_values[0], gps_values[1], hit_point[-1][0], hit_point[-1][0]) > 1:
                     #print("Prev Changed 1")
                     prev = state
-            
-            else: #too far from wall
+
+            # if too far from the wall
+            else:
                 #print("Running else")
                 update_motor_speed(input_omega=[robot_speed, robot_speed/4])
                 #print("Prev Changed 2")
                 #prev = state
-            
-            
-            
-            
-            
-            #The above is new code
-            #difference = front_ir_values[1] - front_ir_values[0]
-            #print(difference)
-            #if difference > 150:
-            #    print("running option 1")
-            #    update_motor_speed(input_omega=[robot_speed, robot_speed])
-            #elif difference < -150:
-            #    print("running option 2")
-            #    update_motor_speed(input_omega=[-1*robot_speed, -1*robot_speed])
-            #elif front_sonar > 0.7:
-            #    print("running option 3")
-            #    print("Front ir: ", front_ir_values[0], front_ir_values[1])
-            #    far_from_wall_counter += 1
-            #    if  far_from_wall_counter == 10:
-            #        prev = state
-            #        state = 'go_close'
-            #        #print("State changed to go_close")
-            #        far_from_wall_counter = 0
-            #    else:
-            #        #print("updating motor speed here")
-            #        update_motor_speed(input_omega=[robot_speed, robot_speed])
-            #        forward_left_speeds = [robot_speed, robot_speed]
-            #        
-            #elif(is_on_M_line(gps_values[0], gps_values[1])) and gps_values[1]<9 and prev == 'wall_following':
-            #    leave_point.append([gps_values[0], gps_values[1]])
-            #     
-            #    print("running option 4")
-            #    if calculate_euclidean_distance(gps_values[0], gps_values[1], goal_postition[0], goal_postition[1]) < calculate_euclidean_distance(hit_point[-1][0], hit_point[-1][1], goal_postition[0], goal_postition[1]):
-            #        prev = state
-            #        state = 'align_robot_heading' 
-            #        #print("State changed to align_robot_heading")
-            #    else:
-            #        continue
 
-
-            #if 50< difference < 200:
-            #    forward_left_speeds[0] -= 1
-            #elif -200 < difference < -50:
-            #    forward_left_speeds[1] -= 1                   
-      
-            #else:    
-            #    print("running option 5")
-            #    update_motor_speed(input_omega=[1*robot_speed, 1*robot_speed])
-            #    forward_left_speeds = [robot_speed, 1*robot_speed]
-            #
-            #if(is_on_M_line(gps_values[0], gps_values[1]) and prev =='wall_following' and gps_values[1]<9):
-            #    leave_point.append([gps_values[0], gps_values[1]])
-            #    if calculate_euclidean_distance(gps_values[0], gps_values[1], goal_postition[0], goal_postition[1]) < calculate_euclidean_distance(hit_point[-1][0], hit_point[-1][1], goal_postition[0], goal_postition[1]):
-            #        prev = state
-            #        state = 'align_robot_heading'
-            #        #print("State changed to align_robot_heading")
-            #    else:
-            #        continue
-            #    
-            # check left and right sonar values 
-            #took out left_sonar or in the if statement below
-            #if left_ir_values[0] < 300: #change to be front
-            #    #print("Left Sonar ", left_sonar)
-            #    print("Left Ir Values ", left_ir_values[0]) 
-            #    prev = state
-            #    state = 'turn'
-            #    #print("State changed to turn")
-            #    theta_0 = get_bearing_in_degrees(compass_val)
-                
-                
-            #elif (front_ir_values[0] < 500 or front_ir_values[1] < 500) or front_sonar < 2:
-            #if front_sonar < 0.3:     # can it be interchanged with distance sensor
-            #   close_to_wall_counter += 1                
-            #    if close_to_wall_counter >= 20:
-            #        prev = state
-            #        state = 'go_reverse'
-            #        #print("State changed to go_reverse")
-            #                
-        elif state == 'go_reverse':
-            print("Running go_reverse state")
-            
-            update_motor_speed(input_omega=[-1*robot_speed, robot_speed])
-            if front_sonar > 0.8:
-                prev = state         
-                state = 'wall_following'
-                #print("State changed to wall_following")
-                close_to_wall_counter = 0
-                
-        elif state == 'go_close':
-            print("Running go_close state")
-            update_motor_speed(input_omega=[-1*robot_speed, robot_speed, 0])
-            difference = abs(front_ir_values[1] - front_ir_values[0])
-            if (front_ir_values[0] + front_ir_values[1]) / 2 < 900 or front_sonar < 1:
-                prev = state
-                state = 'wall_following'
-                #print("State changed to wall_following")
-
-        elif state == 'turn':      
-            print("Running turn state")    
-            theta_0 = get_bearing_in_degrees(compass_val)
-            print("theta_0: ", theta_0)
-            is_aligned = align_to_M(get_bearing_in_degrees(compass_val), theta=theta_0+90, threshold = 0.1, turn_left=True)  
-            print("Theta: ", theta_0+90)
-            print("Is aligned: ",  is_aligned)
-            if is_aligned:
-                prev = state
-                state = 'wall_following'
-                #print("State changed to wall following")
-            
-       
         elif state == 'end':
             print("Running end state")
             is_aligned = align_to_M(get_bearing_in_degrees(compass_val), theta=90, threshold = 0.1)
@@ -262,3 +156,4 @@ if __name__ == "__main__":
             update_motor_speed(input_omega=[0, 0, 0])
         
     pass
+           
