@@ -7,3 +7,5 @@ Both may need to be adjusted to fit your webot build and system, however the log
 
 Bug 2 is in the process in being revised. This bug algorithm is nearly complete, however 
 you can still take this verison and make it your own.
+
+If you are unfamiliar with webots, I suggest these videos to help you understand the world building process. https://youtube.com/playlist?list=PLbEU0vp_OQkUwANRMUOM00SXybYQ4TXNF&si=ejOqIpJbeA-LQ5_N
